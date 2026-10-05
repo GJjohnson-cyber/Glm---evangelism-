@@ -86,7 +86,7 @@ textarea{min-height:76px;resize:vertical}
 </section>
 
 <main id="app" hidden>
-  <div class="bar"><div><h1>GLM Evangelism</h1><p class="sub">Reach. Connect. Follow up.</p></div><button class="link" id="out">Sign out</button></div>
+  <div class="bar"><div><h1>GLM Evangelism</h1><p class="sub">Reach. Connect. Follow up.</p></div><div style="text-align:right"><button class="link" id="out">Sign out</button><br><button class="link" id="bell">Turn on reminders</button></div></div>
   <section class="panel" id="goal"></section>
   <nav class="tabs" id="tabs"><button data-t="today" class="on">Today</button><button data-t="all">Everyone</button><button data-t="won">Souls won</button></nav>
   <div id="list"></div>
@@ -186,7 +186,7 @@ $("#goal").onclick=async e=>{
 };
 
 function showAuth(){U=null;$("#auth").hidden=false;$("#app").hidden=true;$("#add").hidden=true}
-async function enter(u){U=u;$("#auth").hidden=true;$("#app").hidden=false;$("#add").hidden=false;await load()}
+async function enter(u){U=u;$("#auth").hidden=true;$("#app").hidden=false;$("#add").hidden=false;bellState();await load()}
 const creds=()=>({email:$("#em").value.trim(),password:$("#pw").value});
 $("#in").onclick=async()=>{const r=await sb.auth.signInWithPassword(creds());r.error?toast(r.error.message):enter(r.data.user)};
 $("#up").onclick=async()=>{
@@ -200,6 +200,26 @@ $("#fg").onclick=async()=>{
   toast(r.error?r.error.message:"Reset link sent. Check your email.");
 };
 $("#out").onclick=()=>sb.auth.signOut();
+const VAPID="BFJun8frobZHqRkvD6fLkkU3MXgan0sf1iiw8X6aNqraM4BgxTTottPCO-BREdnsBU7yYG67OASmHLc1pCYgYIw";
+const b64=s=>{s=(s+"=".repeat((4-s.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/");return Uint8Array.from(atob(s),c=>c.charCodeAt(0))};
+async function bellState(){
+  const b=$("#bell");
+  if(!("serviceWorker"in navigator&&"PushManager"in window)){b.hidden=true;return}
+  const s=await(await navigator.serviceWorker.ready).pushManager.getSubscription();
+  b.textContent=s?"Reminders on \u2713":"Turn on reminders";
+}
+$("#bell").onclick=async()=>{
+  try{
+    if(Notification.permission==="denied")return toast("Notifications are blocked. Allow them in your phone's site settings.");
+    const reg=await navigator.serviceWorker.ready;
+    if(await reg.pushManager.getSubscription())return toast("Reminders are already on.");
+    if(await Notification.requestPermission()!=="granted")return toast("Please allow notifications to get reminders.");
+    const j=(await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID)})).toJSON();
+    const r=await sb.from("push_subs").upsert({user_id:U.id,endpoint:j.endpoint,p256dh:j.keys.p256dh,auth:j.keys.auth},{onConflict:"endpoint"});
+    if(r.error)return toast(r.error.message);
+    toast("Reminders are on. You will get a morning list.");bellState();
+  }catch(e){toast("Could not turn on reminders: "+e.message)}
+};
 sb.auth.onAuthStateChange((ev)=>{
   if(ev==="SIGNED_OUT")showAuth();
   if(ev==="PASSWORD_RECOVERY"){const p=prompt("Choose a new password (6 or more characters)");if(p)sb.auth.updateUser({password:p}).then(r=>toast(r.error?r.error.message:"Password updated."))}
